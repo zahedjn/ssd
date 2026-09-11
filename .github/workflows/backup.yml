@@ -1,0 +1,37 @@
+name: Backup Supabase database
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # every day at 02:00 UTC
+  workflow_dispatch: {}     # lets you trigger it manually from the Actions tab
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p backups
+          filename="backups/backup-$(date +'%Y-%m-%d_%H-%M').sql"
+          pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges -f "$filename"
+          echo "Created $filename"
+
+      - name: Delete backups older than 30 days
+        run: |
+          find backups -name "backup-*.sql" -mtime +30 -print -delete
+
+      - name: Commit and push backup
+        run: |
+          git config user.name "backup-bot"
+          git config user.email "backup-bot@users.noreply.github.com"
+          git add backups/
+          git diff --cached --quiet || git commit -m "Automated backup $(date +'%Y-%m-%d')"
+          git push
